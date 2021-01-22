@@ -1,6 +1,10 @@
 <script>
   import { flip } from "svelte/animate";
-  import { dndzone, SHADOW_ITEM_MARKER_PROPERTY_NAME } from "svelte-dnd-action";
+  import {
+    dndzone,
+    TRIGGERS,
+    SHADOW_ITEM_MARKER_PROPERTY_NAME,
+  } from "svelte-dnd-action";
 
   import { dropzones } from "./dropzones";
 
@@ -13,37 +17,52 @@
     return `http://localhost:3000/asset/${relativeUrl}`;
   }
 
-  function acceptItems({ detail }) {
-    items = detail.items;
+  function consider(event) {
+    if (event.detail.info.trigger === TRIGGERS.USER_DROPPED) {
+      const mouse = event.detail.info.pointerClientXY;
+      const els = Array.from(document.elementsFromPoint(mouse.x, mouse.y));
+
+      // Find the corresponding dropzone for the drop, if any
+      let dropzoneId;
+      for (const el of els) {
+        if (el.dataset.dropzoneId) {
+          dropzoneId = el.dataset.dropzoneId;
+        }
+      }
+
+      // Dispatch a 'drop' event on the found Dropzone
+      if (dropzoneId) {
+        const item = event.detail.items.find(
+          (i) => i.id === event.detail.info.id
+        );
+        if (item) {
+          delete item.isDndShadowItem;
+          const dz = dropzones.get(dropzoneId);
+          // don't allow dropping on "self"
+          if (dz.list.id !== list.id) {
+            dz.dispatch("drop", { item, list });
+            dz.active.set(true);
+            // no animation
+            event.preventDefault();
+            return;
+          }
+        }
+      }
+      items = event.detail.items;
+    } else {
+      items = event.detail.items;
+    }
   }
 
-  function customDrop(item, mouse) {
-    const els = Array.from(document.elementsFromPoint(mouse.x, mouse.y));
-
-    let dropzoneId;
-    for (const el of els) {
-      if (el.dataset.dropzoneId) {
-        dropzoneId = el.dataset.dropzoneId;
-      }
-    }
-
-    if (dropzoneId) {
-      const dz = dropzones.get(dropzoneId);
-      // don't allow dropping on "self"
-      if (dz.list.id !== list.id) {
-        dz.dispatch("drop", { item, list });
-        dz.active.set(true);
-        // no animation
-        return false;
-      }
-    }
+  function finalize({ detail }) {
+    items = detail.items;
   }
 </script>
 
 <section
-  use:dndzone={{ items, flipDurationMs: FLIP_DURATION, customDrop }}
-  on:consider={acceptItems}
-  on:finalize={acceptItems}
+  use:dndzone={{ items, flipDurationMs: FLIP_DURATION }}
+  on:consider={consider}
+  on:finalize={finalize}
 >
   {#each items as item (item.id)}
     <item data-id={item.id} animate:flip={{ duration: FLIP_DURATION }}>
